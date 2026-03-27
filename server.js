@@ -3,6 +3,7 @@ const bodyParser = require('body-parser');
 const { execFile } = require('child_process');
 const fs = require('fs-extra');
 const sanitizeFilename = require('sanitize-filename');
+const path = require('path');
 
 const app = express();
 app.use(bodyParser.json());
@@ -71,6 +72,27 @@ app.post('/users', async (req, res) => {
   }
 });
 
+// GET /users/:id/config - download .conf file
+app.get('/users/:id/config', async (req, res) => {
+  try {
+    const safeId = sanitizeId(req.params.id);
+    const conf = path.resolve(CONF_DIR, `${safeId}.conf`);
+
+    // Path traversal protection: ensure file is inside CONF_DIR
+    if (!conf.startsWith(path.resolve(CONF_DIR) + path.sep))
+      return res.status(400).json({ error: 'Invalid path' });
+
+    if (!await fs.pathExists(conf))
+      return res.status(404).json({ error: 'User not found' });
+
+    res.setHeader('Content-Type', 'text/plain');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeId}.conf"`);
+    res.sendFile(conf);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // POST /users/:id/enable
 app.post('/users/:id/enable', async (req, res) => {
   try {
@@ -78,7 +100,7 @@ app.post('/users/:id/enable', async (req, res) => {
     const conf = `${CONF_DIR}/${safeId}.conf`;
     if (!await fs.pathExists(conf))
       return res.status(404).json({ error: 'User not found' });
-    await run('awg-quick', ['up', conf]).catch(() => {}); // Ignore if already up
+    await run('awg-quick', ['up', conf]).catch(() => {});
     res.json({ success: true, status: 'enabled' });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -92,7 +114,7 @@ app.post('/users/:id/disable', async (req, res) => {
     const conf = `${CONF_DIR}/${safeId}.conf`;
     if (!await fs.pathExists(conf))
       return res.status(404).json({ error: 'User not found' });
-    await run('awg-quick', ['down', conf]).catch(() => {}); // Ignore if already down
+    await run('awg-quick', ['down', conf]).catch(() => {});
     res.json({ success: true, status: 'disabled' });
   } catch (e) {
     res.status(500).json({ error: e.message });
